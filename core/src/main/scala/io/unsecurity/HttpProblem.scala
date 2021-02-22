@@ -76,7 +76,7 @@ object HttpProblem {
     None,
     Some(Json.arr(allowedMethods.map(m => Json.fromString(m.name)).toSeq: _*))
   )
-
+  
   def badRequest(title: String, detail: Option[String] = None) =
     HttpProblem(Status.BadRequest, title, detail, None)
 
@@ -87,7 +87,7 @@ object HttpProblem {
     HttpProblem(Status.Unauthorized, title, detail, None)
 
   def internalServerError(title: String, detail: Option[String] = None, data: Option[Json] = None) =
-    HttpProblem(Status.InternalServerError, title, detail, None)
+    HttpProblem(Status.InternalServerError, title, detail, data)
 
   def notFound = HttpProblem(Status.NotFound, "Not Found", None, None)
 
@@ -147,21 +147,10 @@ object HttpProblem {
         None
       )
     case NonFatal(e) =>
-      HttpProblem(
-        status = Status.InternalServerError,
-        title = "Internal server error",
-        detail = Option(e.getMessage),
-        data = None,
-        cause = Some(e)
-      )
+      HttpProblem(status = Status.InternalServerError,
+                  title = "Internal server error",
+                  detail = Option(e.getMessage),
+                  data = None,
+                  cause = Some(e))
   }
-
-  def logHttpProblem: PartialFunction[HttpProblem, HttpProblem] = {
-    case h: HttpProblem =>
-      log.error(h)(h.asJson.noSpaces)
-      h
-  }
-
-  def handleAndLogError: PartialFunction[Throwable, HttpProblem] = handleError.andThen(logHttpProblem)
-
 }

@@ -27,8 +27,8 @@ trait UnsecurityOps[F[_]] extends DirectiveOps[F] with RequestDirectives[F] {
   }
 
   implicit class TryDirectives[A](t: Try[A])(implicit S: Sync[F]) {
-    def toSuccess(failure: Throwable => Directive[F, A]): Directive[F, A] = {
-      t.toEither.toSuccess(failure)
+    def toSuccess(failure: Throwable => Directive[F, Response[F]]): Directive[F, A] = {
+      t.toEither.toDirective(failure)
     }
   }
 
@@ -46,10 +46,8 @@ trait UnsecurityOps[F[_]] extends DirectiveOps[F] with RequestDirectives[F] {
   def cookie(cookieName: String)(implicit sync: Sync[F]): Directive[F, RequestCookie] = {
     request
       .cookie(cookieName)
-      .flatMap(
-        opt =>
-          opt.toSuccess(
-            HttpProblem.badRequest(s"Cookie '$cookieName' not found in request").toDirectiveError[F, RequestCookie]))
+      .flatMap(opt =>
+        opt.toDirective(HttpProblem.badRequest(s"Cookie '$cookieName' not found in request").toDirectiveError))
   }
 
   def requestCookies()(implicit sync: Sync[F]): Directive[F, List[RequestCookie]] = {
@@ -73,7 +71,7 @@ trait UnsecurityOps[F[_]] extends DirectiveOps[F] with RequestDirectives[F] {
   }
 
   def requiredQueryParam(name: String)(implicit syncEvidence: Sync[F]): Directive[F, String] = {
-    request.queryParam(name).flatMap(_.toSuccess(BadRequest(s"Missing parameter $name")))
+    request.queryParam(name).flatMap(_.toDirective(BadRequest(s"Missing parameter $name")))
   }
 
   def requiredQueryParamAs[A: ParamConverter](name: String)(implicit sync: Sync[F]): Directive[F, A] = {

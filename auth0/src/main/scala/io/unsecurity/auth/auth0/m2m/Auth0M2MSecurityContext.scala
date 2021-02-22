@@ -63,23 +63,21 @@ class Auth0M2MSecurityContext[F[_]: Sync, U](lookup: OauthAuthenticatedApplicati
                 .map(header => header.value.split(" "))
                 .filter(_.head.equalsIgnoreCase("bearer"))
                 .map(_.last)
-                .toSuccess(
+                .toDirective(
                   HttpProblem.unauthorized("Authorization header with Bearer scheme not found").toDirectiveError)
     } yield token
   }
 
   private def decodedJWT(token: String): Directive[F, DecodedJWT] = {
     Try(JWT.decode(token)).toSuccess { throwable =>
-      log.warn(throwable)("Could not extract token from request")
-      Unauthorized("Could not extract token from request")
+      Unauthorized(s"Could not extract token from request [${throwable.getMessage}]")
     }
   }
 
   private def jwtHeader(jwtToken: DecodedJWT): Directive[F, JwtHeader] = {
     for {
       decodedHeaderString <- decodeBase64(jwtToken.getHeader)
-      header <- decode[JwtHeader](decodedHeaderString).toSuccess { error =>
-                 log.warn(error)("Could not decode jwt header")
+      header <- decode[JwtHeader](decodedHeaderString).toDirective { error =>
                  Unauthorized("Could not decode jwt header")
                }
     } yield header
@@ -115,17 +113,15 @@ class Auth0M2MSecurityContext[F[_]: Sync, U](lookup: OauthAuthenticatedApplicati
     Try {
       verifier.verify(accessToken)
     }.toSuccess { throwable =>
-      log.warn(throwable)(s"Could not verify token for path: $attemptedPath")
-      Unauthorized("Could not verify token")
+      Unauthorized(s"Could not verify token path: $attemptedPath [${throwable.getMessage}]")
     }
   }
 
   private def jwtToken(verifiedToken: DecodedJWT): Directive[F, JwtToken] = {
     for {
       base64Token <- decodeBase64(verifiedToken.getPayload) // TODO: Base64 URL decode !!!
-      jwtToken <- decode[JwtToken](base64Token).toSuccess { decodeError =>
-                   log.warn(s"Unable to decode JWT payload: $decodeError")
-                   Unauthorized("Unable to decode JWT payload")
+      jwtToken <- decode[JwtToken](base64Token).toDirective { decodeError =>
+                   Unauthorized(s"Unable to decode JWT payload: $decodeError")
                  }
     } yield {
       jwtToken

@@ -7,14 +7,14 @@ import java.net.URI
 import cats.effect.Sync
 import com.auth0.jwk.JwkProvider
 import io.unsecurity.Unsecurity
-import io.unsecurity.hlinx.HLinx.HLinx
+import io.unsecurity.hlinx.HLinx.HPath
 import io.unsecurity.hlinx.ParamConverter
 import no.scalabin.http4s.directives.Directive
 import org.http4s.{Method, Response, ResponseCookie}
 import org.log4s.getLogger
 import shapeless.HNil
 
-class Auth0OidcUnsecurity[F[_]: Sync, U](baseUrl: HLinx[HNil],
+class Auth0OidcUnsecurity[F[_]: Sync, U](baseUrl: HPath[HNil],
                                          val sc: Auth0OidcSecurityContext[F, U],
                                          jwkProvider: JwkProvider)
     extends Unsecurity[F, OidcAuthenticatedUser, U] {
@@ -38,13 +38,13 @@ class Auth0OidcUnsecurity[F[_]: Sync, U](baseUrl: HLinx[HNil],
           _                     = log.trace(s"/login returnToUrlParam: $returnToUrlParam")
           auth0CallbackUrlParam <- queryParamAs[URI]("auth0Callback")
           _                     = log.trace(s"/login auth0CallbackUrlParam: $auth0CallbackUrlParam")
-          state                 <- sc.randomString(32).successF
+          state                 <- sc.randomString(32).toDirective
           callbackUrl           = auth0CallbackUrlParam.getOrElse(sc.authConfig.defaultAuth0CallbackUrl)
           returnToUrl           = returnToUrlParam.getOrElse(sc.authConfig.defaultReturnToUrl)
           stateCookie <- sc.Cookies
                           .createStateCookie(secureCookie = callbackUrl.getScheme.equalsIgnoreCase("https"))
-                          .successF
-          _        <- sc.sessionStore.storeState(stateCookie.content, State(state, returnToUrl, callbackUrl, "")).successF
+                          .toDirective
+          _        <- sc.sessionStore.storeState(stateCookie.content, State(state, returnToUrl, callbackUrl, "")).toDirective
           auth0Url = sc.createAuth0Url(state, callbackUrl)
           _        <- break(Redirect(auth0Url).addCookie(stateCookie))
         } yield {
@@ -77,17 +77,20 @@ class Auth0OidcUnsecurity[F[_]: Sync, U](baseUrl: HLinx[HNil],
                             .createSessionCookie(
                               secureCookie = state.callbackUrl.getScheme.equalsIgnoreCase("https")
                             )
-                            .successF
-          _ <- sc.sessionStore.storeSession(sessionCookie.content, oidcUser).successF
+                            .toDirective
+          _ <- sc.sessionStore.storeSession(sessionCookie.content, oidcUser).toDirective
           returnToUrl = if (sc.isReturnUrlWhitelisted(state.returnToUrl)) {
             state.returnToUrl
           } else {
             log.warn(
-              s"/callback returnToUrl (${state.returnToUrl}) not whitelisted; falling back to ${sc.authConfig.defaultReturnToUrl}")
+              s"/callback returnToUrl (${state.returnToUrl}) not whitelisted; falling back to ${sc.authConfig.defaultReturnToUrl}"
+            )
             sc.authConfig.defaultReturnToUrl
           }
-          xsrf <- sc.Cookies.createXsrfCookie(secureCookie = returnToUrl.getScheme.equalsIgnoreCase("https")).successF
-          _    <- sc.sessionStore.removeState(stateCookie.content).successF
+          xsrf <- sc.Cookies
+                   .createXsrfCookie(secureCookie = returnToUrl.getScheme.equalsIgnoreCase("https"))
+                   .toDirective
+          _ <- sc.sessionStore.removeState(stateCookie.content).toDirective
           _ <- break(
                 Redirect(returnToUrl)
                   .addCookie(ResponseCookie(name = sc.Cookies.Keys.STATE, content = "", maxAge = Option(-1)))
@@ -112,7 +115,7 @@ class Auth0OidcUnsecurity[F[_]: Sync, U](baseUrl: HLinx[HNil],
         _ =>
           for {
             cookie <- sc.sessionCookie
-            _      <- sc.sessionStore.removeSession(cookie.content).successF
+            _      <- sc.sessionStore.removeSession(cookie.content).toDirective
             _ <- break(
                   Redirect(sc.authConfig.afterLogoutUrl)
                     .addCookie(
